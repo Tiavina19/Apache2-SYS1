@@ -1,0 +1,44 @@
+---
+- name: Automatisation de tout sur les sites Apache2
+  hosts: localhost
+  become: yes
+  gather_facts: false
+  vars_prompt:
+    - name: file_path
+      prompt: "Chemin du fichier contenant les noms de domaine :"
+      private: false
+
+  tasks:
+    - name: Générer les noms de domaine en utilisant un script
+      script: script/script.js
+      register: script_out
+
+    - name: Créer les dossiers de site
+      file:
+        path: "/var/www/{{ item }}"
+        state: directory
+      loop: "{{ script_out.stdout_lines }}"
+
+    - name: Faire une copie du contenu du site
+      copy:
+        content: "{{ site_content }}"
+        dest: "/var/www/{{ item }}/index.html"
+      loop: "{{ script_out.stdout_lines }}"
+
+    - name: Créer les fichiers de configuration Apache2
+      template:
+        src: "ansible/virtual_host.conf.j2"
+        dest: "/etc/apache2/sites-available/{{ item }}.conf"
+      loop: "{{ script_out.stdout_lines }}"
+      notify: Reload Apache2
+
+    - name: Activer les sites Apache2
+      command: a2ensite {{ item }}.conf
+      loop: "{{ script_out.stdout_lines }}"
+      notify: Reload Apache2
+
+  handlers:
+    - name: Relancer Apache2
+      service:
+        name: apache2
+        state: reloaded
